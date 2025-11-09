@@ -18,11 +18,23 @@ const app = express();
 
 const cors = require("cors");
 
+const allowedOrigins = [
+  "https://chat-application-frontend-indy.vercel.app",
+  "https://chat-application-frontend-iss4.vercel.app",
+  "https://chat-application-frontend-1545.vercel.app",
+   "https://chat-application-frontend-ruby.vercel.app",
+    "https://chat-application-frontend-1s54.vercel.app", // ✅ add this too
+  "http://localhost:3000" // ✅ for local dev
+];
+
 app.use(cors({
-  origin: [
-    "https://chat-application-frontend-ruby.vercel.app",
-    "https://chat-application-frontend-1s54.vercel.app"
-  ],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 }));
 
