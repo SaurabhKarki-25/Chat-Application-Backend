@@ -15,7 +15,7 @@ dotenv.config();
 connectDB();
 
 const app = express();
-const cors = require("cors");
+
 app.use(cors({
   origin: "https://chat-application-frontend-ruby.vercel.app",
   methods: ["GET", "POST"]
