@@ -20,6 +20,7 @@ const cors = require("cors");
 
 app.use(cors({
   origin: [
+    "https://chat-application-frontend-ruby.vercel.app",
     "https://chat-application-frontend-1s54.vercel.app"
   ],
   credentials: true
