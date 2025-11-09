@@ -16,10 +16,16 @@ connectDB();
 
 const app = express();
 
+const cors = require("cors");
+
 app.use(cors({
-  origin: "https://chat-application-frontend-ruby.vercel.app",
-  methods: ["GET", "POST"]
+  origin: [
+    "https://chat-application-frontend-ruby.vercel.app",
+    "https://chat-application-frontend-1s54.vercel.app"
+  ],
+  credentials: true
 }));
+
 
 app.use(express.json({ limit: "10mb" }));
 
