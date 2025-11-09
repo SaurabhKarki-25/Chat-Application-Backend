@@ -15,7 +15,12 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || "*", credentials: true }));
+const cors = require("cors");
+app.use(cors({
+  origin: "https://chat-application-frontend-ruby.vercel.app",
+  methods: ["GET", "POST"]
+}));
+
 app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/auth", authRoutes);
