@@ -5,22 +5,27 @@ import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Helper: ensure both users are friends before allowing chat creation/retrieval
+/* ================= HELPER ================= */
 const areFriends = async (userId, otherId) => {
   const user = await User.findById(userId).select("friends");
   if (!user) return false;
   return user.friends.some((f) => String(f) === String(otherId));
 };
 
-// Get chat between logged-in user and friend by friend's username
+/* ================= GET CHAT ================= */
 router.get("/:username", protect, async (req, res) => {
   try {
     const friend = await User.findOne({ username: req.params.username });
-    if (!friend) return res.status(404).json({ message: "User not found" });
+    if (!friend) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    // security: ensure the two are friends
     const allowed = await areFriends(req.user.id, friend._id);
-    if (!allowed) return res.status(403).json({ message: "Not authorized to view this chat" });
+    if (!allowed) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to view this chat" });
+    }
 
     const chat = await Chat.findOne({
       participants: { $all: [req.user.id, friend._id] },
@@ -33,30 +38,51 @@ router.get("/:username", protect, async (req, res) => {
   }
 });
 
-// Send a message to username — only if they are friends
+/* ================= SEND MESSAGE (TEXT + MEDIA) ================= */
 router.post("/:username", protect, async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!text || !text.trim()) return res.status(400).json({ message: "Empty message" });
+    const {
+      text = "",
+      type = "text",
+      fileUrl = "",
+      fileName = "",
+    } = req.body;
+
+    // ❗ Require either text or media
+    if (!text.trim() && !fileUrl) {
+      return res.status(400).json({ message: "Empty message" });
+    }
 
     const friend = await User.findOne({ username: req.params.username });
-    if (!friend) return res.status(404).json({ message: "User not found" });
+    if (!friend) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    // security check
     const allowed = await areFriends(req.user.id, friend._id);
-    if (!allowed) return res.status(403).json({ message: "Not authorized to send to this user" });
+    if (!allowed) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to send to this user" });
+    }
 
     let chat = await Chat.findOne({
       participants: { $all: [req.user.id, friend._id] },
     });
 
     if (!chat) {
-      chat = await Chat.create({ participants: [req.user.id, friend._id], messages: [] });
+      chat = await Chat.create({
+        participants: [req.user.id, friend._id],
+        messages: [],
+      });
     }
 
+    /* ✅ FINAL MESSAGE OBJECT (PERSISTENT) */
     const newMessage = {
       senderId: req.user.id,
       text,
+      type,
+      fileUrl,
+      fileName,
       timestamp: new Date(),
     };
 
@@ -64,17 +90,16 @@ router.post("/:username", protect, async (req, res) => {
     chat.lastUpdated = new Date();
     await chat.save();
 
-    // emit via socket (send to friend only)
+    /* 🔴 SOCKET SEND TO FRIEND */
     const io = req.app.get("io");
     if (io) {
       io.to(String(friend._id)).emit("receiveMessage", {
-        senderId: req.user.id,
-        message: text,
-        timestamp: newMessage.timestamp,
+        ...newMessage,
+        senderName: req.user.username,
       });
     }
 
-    res.status(201).json({ success: true, message: newMessage });
+    res.status(201).json(newMessage);
   } catch (err) {
     console.error("Chat post error:", err);
     res.status(500).json({ message: "Server error" });
