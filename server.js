@@ -4,7 +4,7 @@ import { Server } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
-import uploadRoutes from "./routes/uploadRoutes";
+import uploadRoutes from "./routes/uploadRoutes.js";
 
 
 // Routes
