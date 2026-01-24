@@ -20,12 +20,17 @@ connectDB();
 const app = express();
 
 /* ======================= MIDDLEWARE ======================= */
-app.use(
-  cors({
-    origin: ["http://localhost:5173","https://chat-application-frontend-ruby.vercel.app"],
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: [
+    "https://chat-application-frontend-1s54-frnguq019.vercel.app",
+    "http://localhost:5173"
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.options("*", cors());
 
 app.use(express.json({ limit: "10mb" }));
 
