@@ -8,7 +8,7 @@ import connectDB from "./config/db.js";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutes.js"; // ✅ fixed name
+import userRoutes from "./routes/userRoutws.js"; // ✅ fixed name
 import friendRoutes from "./routes/friendRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
