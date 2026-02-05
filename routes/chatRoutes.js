@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Chat from "../models/Chat.js";
 import User from "../models/User.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -23,35 +24,26 @@ router.get("/:username", protect, async (req, res) => {
     });
 
     if (!friend) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    const allowed = await areFriends(
-      req.user.id,
-      friend._id
-    );
+    const allowed = await areFriends(req.user.id, friend._id);
 
     if (!allowed) {
       return res.status(403).json({
-        message: "Not authorized to view this chat",
+        message: "Not authorized",
       });
     }
 
     const chat = await Chat.findOne({
-      participants: {
-        $all: [req.user.id, friend._id],
-      },
+      participants: { $all: [req.user.id, friend._id] },
     }).populate("messages.senderId", "username");
 
     res.json(chat || { messages: [] });
 
   } catch (err) {
-    console.error("Chat get error:", err);
-    res.status(500).json({
-      message: "Server error",
-    });
+    console.error("Chat GET error:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
@@ -65,7 +57,6 @@ router.post("/:username", protect, async (req, res) => {
       fileName = "",
     } = req.body;
 
-    /* ✅ SAFE VALIDATION */
     if ((!text || !text.trim()) && !fileUrl) {
       return res.status(400).json({
         message: "Empty message",
@@ -89,30 +80,28 @@ router.post("/:username", protect, async (req, res) => {
 
     if (!allowed) {
       return res.status(403).json({
-        message: "Not authorized to send to this user",
+        message: "Not friends",
       });
     }
 
     let chat = await Chat.findOne({
-      participants: {
-        $all: [req.user.id, friend._id],
-      },
+      participants: { $all: [req.user.id, friend._id] },
     });
 
     if (!chat) {
       chat = await Chat.create({
         participants: [
-          req.user.id,
+          new mongoose.Types.ObjectId(req.user.id),
           friend._id,
         ],
         messages: [],
       });
     }
 
-    /* ✅ FINAL MESSAGE OBJECT */
+    /* ✅ CRITICAL FIX HERE */
     const newMessage = {
-      senderId: req.user.id,
-      text: text || "",
+      senderId: new mongoose.Types.ObjectId(req.user.id),
+      text,
       type,
       fileUrl,
       fileName,
@@ -124,7 +113,7 @@ router.post("/:username", protect, async (req, res) => {
 
     await chat.save();
 
-    /* 🔴 SOCKET SEND */
+    /* 🔴 SOCKET EMIT */
     const io = req.app.get("io");
 
     if (io) {
@@ -140,11 +129,10 @@ router.post("/:username", protect, async (req, res) => {
     res.status(201).json(newMessage);
 
   } catch (err) {
-    console.error("Chat post error:", err);
+    console.error("Chat POST error:", err);
 
     res.status(500).json({
-      message: "Server error",
-      error: err.message, // helpful debug
+      message: err.message,
     });
   }
 });
