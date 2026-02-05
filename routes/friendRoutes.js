@@ -5,7 +5,9 @@ import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Send friend request (create pending)
+/* ===========================
+   SEND FRIEND REQUEST
+=========================== */
 router.post("/request/:id", protect, async (req, res) => {
   try {
     const recipientId = req.params.id;
@@ -23,21 +25,27 @@ router.post("/request/:id", protect, async (req, res) => {
       ],
     });
 
-    if (existing) return res.status(400).json({ message: "Request already pending" });
+    if (existing) {
+      return res.status(400).json({ message: "Request already pending" });
+    }
 
+    // Already friends check
     const alreadyFriends = await User.exists({
       _id: requesterId,
       friends: recipientId,
     });
 
-    if (alreadyFriends) return res.status(400).json({ message: "Already friends" });
+    if (alreadyFriends) {
+      return res.status(400).json({ message: "Already friends" });
+    }
 
     const newRequest = await FriendRequest.create({
       requester: requesterId,
       recipient: recipientId,
+      status: "pending",
     });
 
-    // notify recipient via socket (if available)
+    // notify recipient via socket
     const io = req.app.get("io");
     if (io) {
       io.to(recipientId.toString()).emit("friendRequestReceived", {
@@ -53,56 +61,82 @@ router.post("/request/:id", protect, async (req, res) => {
   }
 });
 
-// Get pending requests that are for the logged-in user (recipient) OR sent by them
-// but in the UI you requested pending only as recipient for mailbox; server returns recipient view
-router.get("/pending", protect, async (req, res) => {
+/* ===========================
+   INCOMING REQUESTS (Received by me)
+=========================== */
+router.get("/pending/received", protect, async (req, res) => {
   try {
     const requests = await FriendRequest.find({
       recipient: req.user.id,
       status: "pending",
-    }).populate("requester", "username email");
+    })
+      .populate("requester", "username email")
+      .sort({ createdAt: -1 });
 
     res.json(requests);
   } catch (err) {
-    console.error("Error fetching pending requests:", err);
+    console.error("Error fetching received requests:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// Accept friend request (only recipient can accept)
+/* ===========================
+   SENT REQUESTS (Sent by me)
+=========================== */
+router.get("/pending/sent", protect, async (req, res) => {
+  try {
+    const requests = await FriendRequest.find({
+      requester: req.user.id,
+      status: "pending",
+    })
+      .populate("recipient", "username email")
+      .sort({ createdAt: -1 });
+
+    res.json(requests);
+  } catch (err) {
+    console.error("Error fetching sent requests:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===========================
+   ACCEPT FRIEND REQUEST
+=========================== */
 router.put("/accept/:id", protect, async (req, res) => {
   try {
     const request = await FriendRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ message: "Request not found" });
 
-    if (String(request.recipient) !== String(req.user.id))
+    if (String(request.recipient) !== String(req.user.id)) {
       return res.status(403).json({ message: "Not authorized" });
+    }
 
-    if (request.status === "accepted")
+    if (request.status === "accepted") {
       return res.status(400).json({ message: "Request already accepted" });
+    }
 
-    // mark accepted
     request.status = "accepted";
     await request.save();
 
-    const receiverId = req.user.id; // who accepted (recipient)
-    const senderId = request.requester; // original requester
+    const receiverId = req.user.id; // recipient (accepted)
+    const senderId = request.requester; // requester (sent)
 
-    // fetch both users
     const [receiver, sender] = await Promise.all([
       User.findById(receiverId),
       User.findById(senderId),
     ]);
 
-    if (!receiver || !sender) return res.status(404).json({ message: "User not found" });
+    if (!receiver || !sender) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    // Add each other (avoid duplicates)
+    // Add each other as friends
     if (!receiver.friends.includes(sender._id)) receiver.friends.push(sender._id);
     if (!sender.friends.includes(receiver._id)) sender.friends.push(receiver._id);
 
     await Promise.all([receiver.save(), sender.save()]);
 
-    // notify both via socket (if any)
+    // notify both via socket
     const io = req.app.get("io");
     if (io) {
       io.to(receiverId.toString()).emit("friendListUpdated");
@@ -113,8 +147,10 @@ router.put("/accept/:id", protect, async (req, res) => {
       });
     }
 
-    // return the accepted friend (useful for frontend to add to list)
-    const acceptedFriend = await User.findById(senderId).select("_id username email");
+    const acceptedFriend = await User.findById(senderId).select(
+      "_id username email"
+    );
+
     res.json({ success: true, acceptedFriend });
   } catch (err) {
     console.error("Error accepting friend:", err);
@@ -122,10 +158,16 @@ router.put("/accept/:id", protect, async (req, res) => {
   }
 });
 
-// List accepted friends for logged-in user
+/* ===========================
+   FRIEND LIST (My friends)
+=========================== */
 router.get("/list", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate("friends", "_id username email");
+    const user = await User.findById(req.user.id).populate(
+      "friends",
+      "_id username email"
+    );
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.json(user.friends || []);
@@ -135,36 +177,36 @@ router.get("/list", protect, async (req, res) => {
   }
 });
 
-// List ALL users (dashboard) with a minimal status: not friend/pending/friend
-// This is safe because we do not return other users' friend lists or sensitive data.
+/* ===========================
+   ACCEPTED REQUESTS LIST (History)
+=========================== */
+router.get("/accepted", protect, async (req, res) => {
+  try {
+    const requests = await FriendRequest.find({
+      $or: [{ requester: req.user.id }, { recipient: req.user.id }],
+      status: "accepted",
+    })
+      .populate("requester", "username email")
+      .populate("recipient", "username email")
+      .sort({ updatedAt: -1 });
+
+    res.json(requests);
+  } catch (err) {
+    console.error("Error fetching accepted requests:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===========================
+   ALL USERS (NO STATUS)
+=========================== */
 router.get("/all", protect, async (req, res) => {
   try {
-    // get current user's friend ids and pending relations
-    const me = await User.findById(req.user.id).select("friends");
-    const pending = await FriendRequest.find({
-      $or: [{ requester: req.user.id }, { recipient: req.user.id }],
-      status: "pending",
-    });
+    const users = await User.find({ _id: { $ne: req.user.id } }).select(
+      "_id username email"
+    );
 
-    const pendingMap = new Map();
-    pending.forEach((p) => {
-      // mark pending with direction
-      if (String(p.requester) === String(req.user.id)) pendingMap.set(String(p.recipient), "sent");
-      else if (String(p.recipient) === String(req.user.id)) pendingMap.set(String(p.requester), "received");
-    });
-
-    // fetch all users except me
-    const users = await User.find({ _id: { $ne: req.user.id } }).select("_id username email");
-
-    const enriched = users.map((u) => {
-      const id = String(u._id);
-      let status = "none";
-      if (me.friends.some((f) => String(f) === id)) status = "friend";
-      else if (pendingMap.has(id)) status = pendingMap.get(id); // 'sent' | 'received'
-      return { _id: u._id, username: u.username, email: u.email, status };
-    });
-
-    res.json(enriched);
+    res.json(users);
   } catch (err) {
     console.error("Error /all:", err);
     res.status(500).json({ message: "Server error" });
