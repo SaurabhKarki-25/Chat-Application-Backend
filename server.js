@@ -8,7 +8,7 @@ import connectDB from "./config/db.js";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutws.js"; // ✅ fixed name
+import userRoutes from "./routes/userRoutws.js";
 import friendRoutes from "./routes/friendRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
@@ -19,36 +19,37 @@ connectDB();
 
 const app = express();
 
-
+/* ======================= CORS FIX ======================= */
 
 const allowedOrigins = [
-  "https://chat-application-frontend-aef4.vercel.app",
   "http://localhost:5173",
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // Postman / server-to-server
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // Postman / server-to-server
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") // ✅ allow ALL vercel deployments
+    ) {
+      return callback(null, true);
+    }
 
-      return callback(new Error("CORS blocked: " + origin));
-    },
-    credentials: true,
-  })
-);
+    return callback(new Error("CORS blocked: " + origin));
+  },
+  credentials: true,
+};
 
+app.use(cors(corsOptions));
 
-
-
+/* ======================= MIDDLEWARE ======================= */
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ======================= HEALTH CHECK ======================= */
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -57,6 +58,7 @@ app.get("/", (req, res) => {
 });
 
 /* ======================= ROUTES ======================= */
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/friends", friendRoutes);
@@ -65,6 +67,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/ai", aiRoutes);
 
 /* ======================= ERROR HANDLER ======================= */
+
 app.use((err, req, res, next) => {
   console.error("❌ Error:", err.message);
   res.status(err.statusCode || 500).json({
@@ -74,12 +77,25 @@ app.use((err, req, res, next) => {
 });
 
 /* ======================= SERVER ======================= */
+
 const server = http.createServer(app);
 
 /* ======================= SOCKET.IO ======================= */
+
 const io = new Server(server, {
   cors: {
-    origin: [allowedOrigins],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      if (
+        origin.endsWith(".vercel.app") ||
+        origin === "http://localhost:5173"
+      ) {
+        return callback(null, true);
+      }
+
+      return callback("Socket CORS blocked");
+    },
     credentials: true,
   },
   pingTimeout: 60000,
@@ -88,25 +104,24 @@ const io = new Server(server, {
 app.set("io", io);
 
 /* ======================= ONLINE USERS ======================= */
+
 const onlineUsers = new Map();
 
 /* ======================= SOCKET EVENTS ======================= */
+
 io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
-  // ✅ JOIN
   socket.on("join", (userId) => {
     if (!userId) return;
 
     const uid = String(userId);
-
     onlineUsers.set(uid, socket.id);
     socket.join(uid);
 
     console.log(`✅ User joined: ${uid}`);
   });
 
-  // ✅ MESSAGE EVENT
   socket.on("sendMessage", ({ senderId, senderName, receiverId, text }) => {
     if (!receiverId || !text) return;
 
@@ -121,7 +136,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ✅ DISCONNECT CLEANUP
   socket.on("disconnect", () => {
     for (const [uid, sid] of onlineUsers.entries()) {
       if (sid === socket.id) {
@@ -136,6 +150,7 @@ io.on("connection", (socket) => {
 });
 
 /* ======================= START SERVER ======================= */
+
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
