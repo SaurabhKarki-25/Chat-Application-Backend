@@ -79,7 +79,7 @@ const server = http.createServer(app);
 /* ======================= SOCKET.IO ======================= */
 const io = new Server(server, {
   cors: {
-    origin: [FRONTEND_URL],
+    origin: [allowedOrigins],
     credentials: true,
   },
   pingTimeout: 60000,
