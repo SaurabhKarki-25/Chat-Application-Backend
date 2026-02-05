@@ -21,17 +21,27 @@ const app = express();
 
 /* ======================= CORS FIX ======================= */
 
-app.use(
-  cors({
-    origin: true, // allow all origins (Vercel previews included)
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+const allowedOrigins = [
+  "http://localhost:5173",
+];
 
-// handle preflight explicitly
-app.options("*", cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // Postman / server-to-server
+
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") // ✅ allow ALL vercel deployments
+    ) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS blocked: " + origin));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 
 /* ======================= MIDDLEWARE ======================= */
 
@@ -60,7 +70,6 @@ app.use("/api/ai", aiRoutes);
 
 app.use((err, req, res, next) => {
   console.error("❌ Error:", err.message);
-
   res.status(err.statusCode || 500).json({
     success: false,
     message: err.message || "Server Error",
@@ -75,7 +84,18 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      if (
+        origin.endsWith(".vercel.app") ||
+        origin === "http://localhost:5173"
+      ) {
+        return callback(null, true);
+      }
+
+      return callback("Socket CORS blocked");
+    },
     credentials: true,
   },
   pingTimeout: 60000,
